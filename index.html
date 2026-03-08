@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>SmartBox</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/5.3.4/mqtt.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#07090d;--s1:#0c1018;--s2:#0f1520;--s3:#141c27;--s4:#1a2535;
+  --b:#1e2d3d;--b2:#243447;
+  --t1:#e8f2ff;--t2:#6b90b0;--t3:#2d4560;
+  --cyan:#00d4ff;--green:#00e676;--amber:#ffab00;--red:#ff4757;--purple:#a78bfa;--pink:#f472b6;
+  --fh:'Syne',sans-serif;--fb:'DM Sans',sans-serif;
+  --r:18px;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none}
+html,body{height:100%}
+body{
+  background:var(--bg);font-family:var(--fb);color:var(--t1);
+  min-height:100vh;padding-bottom:0;overflow-x:hidden;
+  background-image:
+    radial-gradient(ellipse 70% 35% at 95% 0%,rgba(0,212,255,.09) 0%,transparent 55%),
+    radial-gradient(ellipse 50% 40% at 5% 95%,rgba(167,139,250,.07) 0%,transparent 55%);
+}
+::-webkit-scrollbar{width:3px}
+::-webkit-scrollbar-thumb{background:var(--b2);border-radius:3px}
+
+/* ─── TOPBAR ─── */
+.topbar{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:18px 16px 0;
+}
+.brand{display:flex;align-items:center;gap:10px}
+.brand-glow{
+  width:38px;height:38px;border-radius:12px;
+  background:linear-gradient(135deg,var(--cyan),var(--purple));
+  display:flex;align-items:center;justify-content:center;font-size:18px;
+  box-shadow:0 0 20px rgba(0,212,255,.35),0 0 60px rgba(0,212,255,.1);
+}
+.brand-name{font-family:var(--fh);font-size:1.1rem;font-weight:800}
+.brand-name b{color:var(--cyan)}
+
+.pill{
+  display:flex;align-items:center;gap:6px;
+  padding:7px 13px;background:var(--s2);
+  border:1px solid var(--b);border-radius:50px;
+  font-size:.7rem;font-weight:600;color:var(--t2);
+  cursor:pointer;transition:all .25s;
+}
+.pill:hover{border-color:var(--cyan);color:var(--t1)}
+.pill.on{border-color:rgba(0,230,118,.5);color:var(--green)}
+.pill.err{border-color:rgba(255,71,87,.5);color:var(--red)}
+.pdot{width:7px;height:7px;border-radius:50%;background:currentColor;flex-shrink:0}
+.pill.on .pdot{animation:blink 1.6s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
+
+/* ─── TIMEBAR ─── */
+.timebar{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:10px 16px 0;font-size:.7rem;color:var(--t3);
+}
+#clock{font-family:var(--fh);font-size:.88rem;font-weight:700;color:var(--t2)}
+.live{display:flex;align-items:center;gap:5px;color:var(--cyan);font-size:.68rem;font-weight:700}
+.live-dot{width:6px;height:6px;border-radius:50%;background:var(--cyan);animation:blink .9s infinite;box-shadow:0 0 8px var(--cyan)}
+
+/* ─── TOAST ─── */
+.toast{
+  position:fixed;top:16px;left:50%;transform:translateX(-50%) translateY(-80px);
+  background:var(--s2);border:1px solid var(--b);border-radius:50px;
+  padding:10px 20px;font-size:.8rem;font-weight:600;
+  z-index:200;transition:transform .35s cubic-bezier(.34,1.4,.64,1);
+  white-space:nowrap;box-shadow:0 8px 32px rgba(0,0,0,.4);
+  display:flex;align-items:center;gap:8px;
+}
+.toast.show{transform:translateX(-50%) translateY(0)}
+.toast.ok{border-color:rgba(0,230,118,.4);color:var(--green)}
+.toast.warn{border-color:rgba(255,171,0,.4);color:var(--amber)}
+.toast.err{border-color:rgba(255,71,87,.4);color:var(--red)}
+.toast.info{border-color:rgba(0,212,255,.4);color:var(--cyan)}
+
+/* ─── RELAY BANNER ─── */
+.relay-banner{
+  margin:12px 14px 0;height:0;opacity:0;overflow:hidden;
+  transition:height .4s ease,opacity .35s ease;border-radius:var(--r);
+}
+.relay-banner.show{height:56px;opacity:1}
+.rbi{
+  height:56px;border-radius:var(--r);
+  background:linear-gradient(110deg,rgba(0,230,118,.14) 0%,rgba(0,212,255,.08) 100%);
+  border:1px solid rgba(0,230,118,.45);
+  display:flex;align-items:center;padding:0 16px;gap:12px;
+  box-shadow:0 0 24px rgba(0,230,118,.1);
+}
+.rbi-pulse{
+  width:12px;height:12px;border-radius:50%;background:var(--green);flex-shrink:0;
+  box-shadow:0 0 0 0 rgba(0,230,118,.6);
+  animation:ripple 1.3s infinite;
+}
+@keyframes ripple{0%{box-shadow:0 0 0 0 rgba(0,230,118,.6)}70%{box-shadow:0 0 0 10px rgba(0,230,118,0)}100%{box-shadow:0 0 0 0 rgba(0,230,118,0)}}
+.rbi-text{flex:1}
+.rbi-title{font-family:var(--fh);font-size:.82rem;font-weight:700;color:var(--green)}
+.rbi-sub{font-size:.62rem;color:var(--t2);margin-top:1px}
+.rbi-badge{
+  background:rgba(0,230,118,.2);border:1px solid rgba(0,230,118,.4);
+  border-radius:50px;padding:4px 11px;font-size:.65rem;font-weight:800;
+  color:var(--green);letter-spacing:.08em;
+}
+
+/* ─── ALERT STRIP ─── */
+.alert-strip{
+  margin:10px 14px 0;display:none;
+  background:rgba(255,71,87,.08);border:1px solid rgba(255,71,87,.35);
+  border-radius:var(--r);padding:13px 14px;
+  animation:slideIn .3s ease;
+}
+.alert-strip.show{display:flex;align-items:flex-start;gap:10px}
+@keyframes slideIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
+.al-ico{font-size:1.3rem;flex-shrink:0}
+.al-body{flex:1}
+.al-title{font-size:.8rem;font-weight:700;color:var(--red)}
+.al-msg{font-size:.67rem;color:var(--t2);margin-top:2px}
+.al-x{background:none;border:none;color:var(--t3);font-size:1.1rem;cursor:pointer;padding:0;flex-shrink:0;line-height:1;transition:color .2s}
+.al-x:hover{color:var(--red)}
+
+/* ─── SENSOR CARDS ─── */
+.sgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;padding:12px 14px 0}
+.sc{
+  background:var(--s1);border:1px solid var(--b);border-radius:var(--r);
+  padding:14px 11px;position:relative;overflow:hidden;
+  transition:border-color .4s,box-shadow .4s;
+}
+.sc::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,var(--gc,transparent),transparent);
+  opacity:.6;
+}
+.sc.warn{border-color:rgba(255,171,0,.5);box-shadow:0 0 16px rgba(255,171,0,.08)}
+.sc.danger{border-color:rgba(255,71,87,.55);box-shadow:0 0 16px rgba(255,71,87,.12);animation:jolt .35s ease}
+@keyframes jolt{0%,100%{transform:none}33%{transform:translateX(-2px)}66%{transform:translateX(2px)}}
+.sc-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.sc-ico{font-size:1.2rem}
+.sc-chip{font-size:.56rem;font-weight:700;padding:2px 7px;border-radius:50px;letter-spacing:.06em;text-transform:uppercase;background:var(--b2);color:var(--t3);transition:all .3s}
+.sc-chip.ok{background:rgba(0,230,118,.12);color:var(--green)}
+.sc-chip.warn{background:rgba(255,171,0,.12);color:var(--amber)}
+.sc-chip.danger{background:rgba(255,71,87,.12);color:var(--red)}
+.sc-num{font-family:var(--fh);font-size:1.6rem;font-weight:700;line-height:1;transition:color .3s}
+.sc-num.ok{color:var(--t1)}
+.sc-num.warn{color:var(--amber)}
+.sc-num.danger{color:var(--red)}
+.sc-unit{font-size:.6rem;font-weight:500;color:var(--t3);text-transform:uppercase;letter-spacing:.05em;margin-top:1px}
+.sc-bar{margin-top:9px;height:2px;background:var(--b2);border-radius:2px;overflow:hidden}
+.sc-fill{height:100%;border-radius:2px;transition:width .8s ease}
+
+/* ─── RELAY CARD ─── */
+.relay-wrap{padding:10px 14px 0}
+.rcard{
+  background:var(--s1);border:1px solid var(--b);border-radius:20px;
+  padding:16px;display:flex;align-items:center;gap:14px;
+  cursor:pointer;transition:all .35s;position:relative;overflow:hidden;
+}
+.rcard::after{
+  content:'';position:absolute;inset:0;border-radius:20px;
+  background:linear-gradient(135deg,rgba(0,230,118,.07),rgba(0,212,255,.04));
+  opacity:0;transition:opacity .35s;pointer-events:none;
+}
+.rcard.on{border-color:rgba(0,230,118,.5);box-shadow:0 0 30px rgba(0,230,118,.12)}
+.rcard.on::after{opacity:1}
+.rcard:active{transform:scale(.99)}
+.rico{
+  width:50px;height:50px;border-radius:14px;
+  background:var(--s3);border:1px solid var(--b);
+  display:flex;align-items:center;justify-content:center;
+  font-size:22px;transition:all .35s;flex-shrink:0;
+}
+.rcard.on .rico{
+  background:rgba(0,230,118,.1);border-color:rgba(0,230,118,.35);
+  box-shadow:0 0 18px rgba(0,230,118,.2);
+  animation:glow-pulse 2s infinite;
+}
+@keyframes glow-pulse{0%,100%{box-shadow:0 0 18px rgba(0,230,118,.2)}50%{box-shadow:0 0 28px rgba(0,230,118,.4)}}
+.rinfo{flex:1;min-width:0}
+.rtitle{font-family:var(--fh);font-size:.9rem;font-weight:700;margin-bottom:5px}
+.rstatus{display:inline-flex;align-items:center;gap:5px;font-size:.68rem;font-weight:700;padding:3px 9px;border-radius:50px;background:var(--b2);color:var(--t3);transition:all .35s}
+.rcard.on .rstatus{background:rgba(0,230,118,.12);color:var(--green)}
+.rstatus-dot{width:5px;height:5px;border-radius:50%;background:currentColor}
+.rcard.on .rstatus-dot{animation:blink .8s infinite}
+.rright{display:flex;flex-direction:column;align-items:flex-end;gap:8px;flex-shrink:0}
+.rtoggle{
+  width:52px;height:28px;border-radius:50px;
+  background:var(--b2);border:1px solid var(--b);
+  position:relative;transition:all .3s;flex-shrink:0;
+}
+.rtoggle::after{
+  content:'';position:absolute;top:3px;left:3px;
+  width:20px;height:20px;border-radius:50%;background:var(--t3);
+  transition:all .3s;box-shadow:0 2px 6px rgba(0,0,0,.4);
+}
+.rtoggle.on{background:rgba(0,230,118,.22);border-color:rgba(0,230,118,.4)}
+.rtoggle.on::after{left:27px;background:var(--green);box-shadow:0 0 12px rgba(0,230,118,.7)}
+.rontime{font-size:.6rem;color:var(--t3);font-weight:600;transition:color .3s;font-family:var(--fh)}
+.rcard.on .rontime{color:var(--green)}
+
+/* ─── COUNTDOWN ─── */
+.cdwrap{padding:8px 14px 0;display:none}
+.cdwrap.show{display:block}
+.cdbg{
+  background:var(--s1);border:1px solid rgba(255,171,0,.3);border-radius:14px;
+  padding:13px 15px;box-shadow:0 0 18px rgba(255,171,0,.06);
+}
+.cdrow{display:flex;align-items:center;justify-content:space-between;margin-bottom:9px}
+.cdlabel{font-size:.7rem;font-weight:700;color:var(--amber);display:flex;align-items:center;gap:6px}
+.cdval{font-family:var(--fh);font-size:.95rem;font-weight:700;color:var(--t1)}
+.cdtrack{height:5px;background:var(--b2);border-radius:5px;overflow:hidden}
+.cdfill{height:100%;border-radius:5px;background:linear-gradient(90deg,var(--amber),var(--cyan));transition:width 1s linear}
+
+/* ─── TIMER CARD ─── */
+.twrap{padding:10px 14px 0}
+.tcard{background:var(--s1);border:1px solid var(--b);border-radius:20px;padding:16px}
+.ttabs{display:flex;gap:8px;margin-bottom:14px}
+.ttab{
+  flex:1;padding:8px 6px;border-radius:10px;text-align:center;
+  font-size:.72rem;font-weight:700;color:var(--t2);cursor:pointer;
+  background:var(--s3);border:1px solid var(--b);transition:all .2s;
+}
+.ttab.active{background:var(--b2);border-color:var(--cyan);color:var(--cyan)}
+.ttab:active{opacity:.7}
+.tbody{display:none}
+.tbody.active{display:block}
+.trow{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.trow label{font-size:.66rem;font-weight:600;color:var(--t2);min-width:55px;text-transform:uppercase;letter-spacing:.04em}
+.tinput{
+  flex:1;background:var(--s3);border:1px solid var(--b);border-radius:10px;
+  padding:10px 12px;font-family:var(--fb);font-size:.88rem;color:var(--t1);
+  font-weight:500;outline:none;transition:border-color .2s;
+  -webkit-appearance:none;appearance:none;
+}
+.tinput:focus{border-color:var(--cyan)}
+.tinput[type=time]{color-scheme:dark}
+.brow{display:flex;gap:8px;margin-top:6px}
+.bgo{
+  flex:1;padding:11px;border:none;border-radius:12px;cursor:pointer;
+  font-family:var(--fb);font-size:.82rem;font-weight:700;letter-spacing:.02em;
+  background:linear-gradient(135deg,var(--cyan),var(--purple));color:#fff;
+  transition:opacity .15s,transform .1s;
+}
+.bgo:hover{opacity:.92}
+.bgo:active{opacity:.8;transform:scale(.98)}
+.bcancel{
+  padding:11px 14px;background:var(--s3);border:1px solid var(--b);
+  border-radius:12px;color:var(--red);font-family:var(--fb);
+  font-size:.82rem;font-weight:700;cursor:pointer;transition:all .2s;
+}
+.bcancel:hover{border-color:var(--red);background:rgba(255,71,87,.06)}
+.bcancel:active{opacity:.7}
+
+/* ─── CHARTS ─── */
+.cwrap{padding:10px 14px 0}
+.ccard{background:var(--s1);border:1px solid var(--b);border-radius:20px;padding:16px;margin-bottom:10px}
+.chead{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.ctitle{font-family:var(--fh);font-size:.85rem;font-weight:700}
+.cval{font-family:var(--fh);font-size:.95rem;font-weight:700}
+canvas{width:100%!important;height:108px!important}
+
+/* ─── LOG ─── */
+.lwrap{padding:10px 14px 16px}
+.lcard{background:var(--s1);border:1px solid var(--b);border-radius:20px;overflow:hidden}
+.lhead{display:flex;align-items:center;justify-content:space-between;padding:14px 15px 10px;border-bottom:1px solid var(--b)}
+.ltitle{font-family:var(--fh);font-size:.85rem;font-weight:700}
+.lclear{font-size:.67rem;color:var(--t3);cursor:pointer;padding:4px 9px;border-radius:8px;background:var(--s3);transition:color .2s}
+.lclear:hover{color:var(--red)}
+.llist{max-height:300px;overflow-y:auto}
+.lrow{display:flex;align-items:flex-start;gap:9px;padding:10px 15px;border-bottom:1px solid rgba(255,255,255,.03);animation:fadeIn .2s ease;font-size:.73rem}
+.lrow:last-child{border:none}
+@keyframes fadeIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+.ldot{width:7px;height:7px;border-radius:50%;flex-shrink:0;margin-top:5px}
+.ltxt{flex:1;line-height:1.6}
+.lts{font-size:.6rem;color:var(--t3);white-space:nowrap;margin-top:3px;font-family:var(--fh)}
+
+/* ─── BOTTOM NAV ─── */
+.bnav{
+  position:fixed;bottom:0;left:0;right:0;z-index:50;
+  background:rgba(7,9,13,.95);backdrop-filter:blur(20px);
+  border-top:1px solid var(--b);
+  display:flex;align-items:center;padding:8px 0 18px;
+}
+.nb{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;padding:5px 4px;transition:opacity .15s}
+.nb:active{opacity:.5}
+.nb-ico{font-size:1.2rem;position:relative}
+.nb-pip{
+  position:absolute;top:-3px;right:-5px;width:7px;height:7px;
+  border-radius:50%;background:var(--green);border:2px solid var(--bg);
+  display:none;
+}
+.nb-pip.show{display:block;animation:blink .9s infinite}
+.nb-lbl{font-size:.56rem;color:var(--t3);font-weight:700;text-transform:uppercase;letter-spacing:.06em;transition:color .2s}
+.nb.act .nb-lbl{color:var(--cyan)}
+
+/* ─── MODAL ─── */
+.ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.72);backdrop-filter:blur(6px);z-index:99;align-items:flex-end;justify-content:center}
+.ov.open{display:flex}
+.modal{background:var(--s1);border:1px solid var(--b);border-top-left-radius:24px;border-top-right-radius:24px;padding:18px 18px 38px;width:100%;max-width:440px;animation:mup .32s cubic-bezier(.34,1.3,.64,1)}
+@keyframes mup{from{transform:translateY(100%)}to{transform:none}}
+.mhdl{width:36px;height:4px;background:var(--b2);border-radius:2px;margin:0 auto 16px}
+.mttl{font-family:var(--fh);font-size:.95rem;font-weight:700;margin-bottom:14px}
+.mf{margin-bottom:11px}
+.mf label{display:block;font-size:.63rem;font-weight:700;color:var(--t2);letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px}
+.mf input{width:100%;background:var(--s3);border:1px solid var(--b);border-radius:11px;padding:11px 13px;font-family:var(--fb);font-size:.88rem;color:var(--t1);font-weight:500;outline:none;transition:border-color .2s}
+.mf input:focus{border-color:var(--cyan)}
+.mbtn{width:100%;background:linear-gradient(135deg,var(--cyan),var(--purple));color:#fff;border:none;border-radius:14px;padding:14px;font-family:var(--fb);font-size:.9rem;font-weight:700;cursor:pointer;margin-top:6px;letter-spacing:.02em;transition:opacity .2s}
+.mbtn:active{opacity:.8}
+</style>
+</head>
+<body>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<!-- TOPBAR -->
+<div class="topbar">
+  <div class="brand">
+    <div class="brand-glow">⚡</div>
+    <div class="brand-name">Smart<b>Box</b></div>
+  </div>
+  <div class="pill" id="cpill" onclick="openModal()">
+    <div class="pdot"></div>
+    <span id="ctext">Tap untuk konek</span>
+  </div>
+</div>
+
+<!-- TIMEBAR -->
+<div class="timebar">
+  <span>ESP32-S3 Monitor</span>
+  <div class="live"><div class="live-dot"></div>LIVE 1s</div>
+  <span id="clock">--:--:--</span>
+</div>
+
+<!-- RELAY BANNER -->
+<div class="relay-banner" id="relay-banner">
+  <div class="rbi">
+    <div class="rbi-pulse"></div>
+    <div class="rbi-text">
+      <div class="rbi-title">⚡ RELAY SEDANG AKTIF</div>
+      <div class="rbi-sub" id="rb-sub">—</div>
+    </div>
+    <div class="rbi-badge">ON</div>
+  </div>
+</div>
+
+<!-- ALERT -->
+<div class="alert-strip" id="alert-strip">
+  <div class="al-ico" id="al-ico">⚠️</div>
+  <div class="al-body">
+    <div class="al-title" id="al-title">—</div>
+    <div class="al-msg"   id="al-msg">—</div>
+  </div>
+  <button class="al-x" onclick="closeAlert()">✕</button>
+</div>
+
+<!-- SENSOR CARDS -->
+<div class="sgrid">
+  <div class="sc" id="sc-t" style="--gc:var(--amber)">
+    <div class="sc-head"><span class="sc-ico">🌡️</span><span class="sc-chip" id="chip-t">—</span></div>
+    <div class="sc-num" id="num-t">—</div>
+    <div class="sc-unit">°C Suhu</div>
+    <div class="sc-bar"><div class="sc-fill" id="fill-t" style="width:0;background:var(--amber)"></div></div>
+  </div>
+  <div class="sc" id="sc-h" style="--gc:var(--cyan)">
+    <div class="sc-head"><span class="sc-ico">💧</span><span class="sc-chip" id="chip-h">—</span></div>
+    <div class="sc-num" id="num-h">—</div>
+    <div class="sc-unit">% Humid</div>
+    <div class="sc-bar"><div class="sc-fill" id="fill-h" style="width:0;background:var(--cyan)"></div></div>
+  </div>
+  <div class="sc" id="sc-g" style="--gc:var(--purple)">
+    <div class="sc-head"><span class="sc-ico">🌫️</span><span class="sc-chip" id="chip-g">—</span></div>
+    <div class="sc-num" id="num-g">—</div>
+    <div class="sc-unit">Gas ADC</div>
+    <div class="sc-bar"><div class="sc-fill" id="fill-g" style="width:0;background:var(--purple)"></div></div>
+  </div>
+</div>
+
+<!-- RELAY CARD -->
+<div class="relay-wrap">
+  <div class="rcard" id="rcard" onclick="handleRelayTap()">
+    <div class="rico" id="rico">🔌</div>
+    <div class="rinfo">
+      <div class="rtitle">Relay / Saklar</div>
+      <div class="rstatus" id="rstatus">
+        <div class="rstatus-dot"></div>
+        <span id="rstatus-txt">OFFLINE</span>
+      </div>
+    </div>
+    <div class="rright">
+      <div class="rtoggle" id="rtoggle"></div>
+      <div class="rontime" id="rontime">—</div>
+    </div>
+  </div>
+</div>
+
+<!-- COUNTDOWN -->
+<div class="cdwrap" id="cdwrap">
+  <div class="cdbg">
+    <div class="cdrow">
+      <div class="cdlabel">⏳ Countdown aktif</div>
+      <div class="cdval" id="cdval">—</div>
+    </div>
+    <div class="cdtrack"><div class="cdfill" id="cdfill" style="width:100%"></div></div>
+  </div>
+</div>
+
+<!-- TIMER -->
+<div class="twrap">
+  <div class="tcard">
+    <div class="ttabs">
+      <div class="ttab active" id="tab-cd"  onclick="switchTab('cd')">⏳ Countdown</div>
+      <div class="ttab"        id="tab-sch" onclick="switchTab('sch')">📅 Jadwal Harian</div>
+    </div>
+    <!-- countdown -->
+    <div class="tbody active" id="body-cd">
+      <div class="trow">
+        <label>Menit</label>
+        <input class="tinput" type="number" id="cd-min" min="1" max="1440" placeholder="Contoh: 30">
+      </div>
+      <div class="brow">
+        <button class="bgo"     id="btn-cd-start"  onclick="startCountdown()">▶ Mulai Countdown</button>
+        <button class="bcancel" id="btn-cd-cancel" onclick="cancelTimer()">✕</button>
+      </div>
+    </div>
+    <!-- schedule -->
+    <div class="tbody" id="body-sch">
+      <div class="trow">
+        <label>Nyala</label>
+        <input class="tinput" type="time" id="sch-on" value="07:00">
+      </div>
+      <div class="trow">
+        <label>Mati</label>
+        <input class="tinput" type="time" id="sch-off" value="22:00">
+      </div>
+      <div class="brow">
+        <button class="bgo"     id="btn-sch-save"   onclick="startSchedule()">💾 Simpan Jadwal</button>
+        <button class="bcancel" id="btn-sch-cancel"  onclick="cancelTimer()">✕</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- CHARTS -->
+<div class="cwrap">
+  <div class="ccard">
+    <div class="chead">
+      <div class="ctitle">🌡️ Suhu &amp; Kelembaban</div>
+      <div class="cval" id="cv-th" style="color:var(--amber)">—</div>
+    </div>
+    <canvas id="cth"></canvas>
+  </div>
+  <div class="ccard">
+    <div class="chead">
+      <div class="ctitle">🌫️ Kualitas Udara</div>
+      <div class="cval" id="cv-gas" style="color:var(--purple)">—</div>
+    </div>
+    <canvas id="cgas"></canvas>
+  </div>
+</div>
+
+<!-- LOG -->
+<div class="lwrap">
+  <div class="lcard">
+    <div class="lhead">
+      <div class="ltitle">📋 Event Log</div>
+      <div class="lclear" onclick="clearLog()">Hapus</div>
+    </div>
+    <div class="llist" id="llist">
+      <div class="lrow">
+        <div class="ldot" style="background:var(--t3)"></div>
+        <div class="ltxt"><span style="color:var(--t2)">📋 Dashboard siap. Tap ⚙️ untuk setup MQTT.</span></div>
+        <div class="lts">--:--</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SPACER -->
+<div style="height:80px"></div>
+
+<!-- BOTTOM NAV -->
+<div class="bnav">
+  <div class="nb act" onclick="smoothTo('.sgrid')">
+    <div class="nb-ico">📊</div><div class="nb-lbl">Sensor</div>
+  </div>
+  <div class="nb" onclick="smoothTo('.relay-wrap')">
+    <div class="nb-ico">🔌<div class="nb-pip" id="relay-pip"></div></div>
+    <div class="nb-lbl">Relay</div>
+  </div>
+  <div class="nb" onclick="smoothTo('.twrap')">
+    <div class="nb-ico">⏰</div><div class="nb-lbl">Timer</div>
+  </div>
+  <div class="nb" onclick="smoothTo('.cwrap')">
+    <div class="nb-ico">📈</div><div class="nb-lbl">Grafik</div>
+  </div>
+  <div class="nb" onclick="openModal()">
+    <div class="nb-ico">⚙️</div><div class="nb-lbl">MQTT</div>
+  </div>
+</div>
+
+<!-- MODAL -->
+<div class="ov" id="ov" onclick="ovClose(event)">
+  <div class="modal">
+    <div class="mhdl"></div>
+    <div class="mttl">⚙️ Konfigurasi MQTT</div>
+    <div class="mf"><label>Host HiveMQ Cloud</label><input id="m-host" type="text" placeholder="xxxx.s1.eu.hivemq.cloud" autocomplete="off"></div>
+    <div class="mf"><label>Port WebSocket TLS</label><input id="m-port" value="8884" type="number"></div>
+    <div class="mf"><label>Username</label><input id="m-user" type="text" autocomplete="off"></div>
+    <div class="mf"><label>Password</label><input id="m-pass" type="password" autocomplete="off"></div>
+    <button class="mbtn" onclick="connectMQTT()">Hubungkan ▶</button>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ── TOAST ───────────────────────────────────────────────────
+let toastTO=null;
+function toast(msg,type='info'){
+  const el=document.getElementById('toast');
+  el.textContent=msg;
+  el.className='toast show '+type;
+  if(toastTO)clearTimeout(toastTO);
+  toastTO=setTimeout(()=>el.classList.remove('show'),3000);
+}
+
+// ── CLOCK ───────────────────────────────────────────────────
+setInterval(()=>{document.getElementById('clock').textContent=new Date().toLocaleTimeString('id-ID');},1000);
+
+// ── SMOOTH SCROLL ───────────────────────────────────────────
+function smoothTo(sel){
+  const el=document.querySelector(sel);
+  if(el) window.scrollTo({top:el.offsetTop-10,behavior:'smooth'});
+}
+
+// ── CHARTS ──────────────────────────────────────────────────
+const N=60;
+Chart.defaults.color='#2d4560';
+Chart.defaults.font.family="'DM Sans',sans-serif";
+
+const mkChart=(id,datasets,yOpts)=>new Chart(document.getElementById(id).getContext('2d'),{
+  type:'line',
+  data:{labels:Array(N).fill(''),datasets},
+  options:{
+    responsive:true,maintainAspectRatio:false,
+    animation:{duration:150},
+    interaction:{mode:'index',intersect:false},
+    plugins:{
+      legend:{display:datasets.length>1,labels:{boxWidth:9,padding:10,color:'#6b90b0',font:{size:10}}},
+      tooltip:{backgroundColor:'#0f1520',borderColor:'#1e2d3d',borderWidth:1,titleColor:'#e8f2ff',bodyColor:'#6b90b0',padding:9},
+    },
+    scales:{
+      x:{display:false},
+      ...yOpts
+    }
+  }
+});
+
+const chartTH=mkChart('cth',[
+  {label:'Suhu °C',data:Array(N).fill(null),yAxisID:'y',borderColor:'#ffab00',backgroundColor:'rgba(255,171,0,.08)',borderWidth:2,pointRadius:0,tension:.45,fill:true},
+  {label:'Humid %',data:Array(N).fill(null),yAxisID:'y2',borderColor:'#00d4ff',backgroundColor:'rgba(0,212,255,.06)',borderWidth:2,pointRadius:0,tension:.45,fill:true},
+],{
+  y:{position:'left',min:0,max:60,grid:{color:'rgba(30,45,61,.9)'},ticks:{color:'#2d4560',font:{size:10},maxTicksLimit:4}},
+  y2:{position:'right',min:0,max:100,grid:{display:false},ticks:{color:'#2d4560',font:{size:10},maxTicksLimit:4}},
+});
+
+const chartGas=mkChart('cgas',[
+  {label:'Gas ADC',data:Array(N).fill(null),yAxisID:'y',borderColor:'#a78bfa',backgroundColor:'rgba(167,139,250,.1)',borderWidth:2,pointRadius:0,tension:.45,fill:true},
+],{
+  y:{min:0,max:4095,grid:{color:'rgba(30,45,61,.9)'},ticks:{color:'#2d4560',font:{size:10},maxTicksLimit:4}},
+});
+
+function pushCharts(t,h,g){
+  const ts=new Date().toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  [chartTH.data.labels,chartGas.data.labels].forEach(arr=>{arr.push(ts);arr.shift();});
+  chartTH.data.datasets[0].data.push(t);chartTH.data.datasets[0].data.shift();
+  chartTH.data.datasets[1].data.push(h);chartTH.data.datasets[1].data.shift();
+  chartGas.data.datasets[0].data.push(g);chartGas.data.datasets[0].data.shift();
+  chartTH.update('none');chartGas.update('none');
+}
+
+// ── SENSOR ──────────────────────────────────────────────────
+function setSC(numId,chipId,cardId,fillId,val,max,warnV,dangerV,warnL,dangerL,okL,fillColor){
+  const num =document.getElementById(numId);
+  const chip=document.getElementById(chipId);
+  const card=document.getElementById(cardId);
+  const fill=document.getElementById(fillId);
+  const disp=typeof val==='number'&&val%1!==0?val.toFixed(1):String(val);
+  num.textContent=disp;
+  fill.style.width=Math.min(Math.max((val/max)*100,0),100)+'%';
+  fill.style.background=fillColor;
+  const st=val>=dangerV?'danger':val>=warnV?'warn':'ok';
+  num.className='sc-num '+st;
+  chip.className='sc-chip '+st;
+  chip.textContent=st==='danger'?dangerL:st==='warn'?warnL:okL;
+  card.className='sc'+(st!=='ok'?' '+st:'');
+}
+
+function updateSensor(t,h,g){
+  pushCharts(t,h,g);
+  setSC('num-t','chip-t','sc-t','fill-t',t,60,35,40,'PANAS','BAHAYA','OK','var(--amber)');
+  setSC('num-h','chip-h','sc-h','fill-h',h,100,75,85,'SEDANG','TINGGI','OK','var(--cyan)');
+  setSC('num-g','chip-g','sc-g','fill-g',g,4095,400,600,'SEDANG','BURUK','BAIK','var(--purple)');
+  document.getElementById('cv-th').textContent =t.toFixed(1)+'°C / '+h.toFixed(0)+'%';
+  document.getElementById('cv-gas').textContent=g+' ADC';
+}
+
+// ── RELAY ───────────────────────────────────────────────────
+let relayOn=false,relayOnSince=null,ronTick=null;
+
+function updateRelayUI(on,reason){
+  relayOn=on;
+  document.getElementById('rcard').className='rcard'+(on?' on':'');
+  document.getElementById('rico').textContent=on?'💡':'🔌';
+  document.getElementById('rtoggle').className='rtoggle'+(on?' on':'');
+  document.getElementById('rstatus-txt').textContent=on?'AKTIF':'OFFLINE';
+  document.getElementById('relay-banner').classList.toggle('show',on);
+  document.getElementById('relay-pip').classList.toggle('show',on);
+  if(on){
+    document.getElementById('rb-sub').textContent='Via: '+(reason||'manual');
+    if(!relayOnSince) relayOnSince=Date.now();
+    if(ronTick) clearInterval(ronTick);
+    ronTick=setInterval(()=>{
+      const s=Math.floor((Date.now()-relayOnSince)/1000);
+      const m=Math.floor(s/60),sec=s%60;
+      document.getElementById('rontime').textContent='ON '+(m>0?m+'m ':'')+sec+'s';
+    },1000);
+  } else {
+    relayOnSince=null;
+    if(ronTick){clearInterval(ronTick);ronTick=null;}
+    document.getElementById('rontime').textContent='—';
+    document.getElementById('rb-sub').textContent='—';
+  }
+}
+
+// ── ALERT ───────────────────────────────────────────────────
+let alertTO=null;
+function showAlert(ico,title,msg){
+  document.getElementById('al-ico').textContent=ico;
+  document.getElementById('al-title').textContent=title;
+  document.getElementById('al-msg').textContent=msg;
+  document.getElementById('alert-strip').classList.add('show');
+  if(alertTO)clearTimeout(alertTO);
+  alertTO=setTimeout(closeAlert,14000);
+}
+function closeAlert(){document.getElementById('alert-strip').classList.remove('show');}
+
+// ── COUNTDOWN UI ────────────────────────────────────────────
+let cdEnd=0,cdTotal=0,cdTick=null,timerActive=false;
+function startCDUI(min){
+  cdTotal=min*60000;cdEnd=Date.now()+cdTotal;timerActive=true;
+  document.getElementById('cdwrap').classList.add('show');
+  if(cdTick)clearInterval(cdTick);
+  cdTick=setInterval(()=>{
+    const rem=cdEnd-Date.now();
+    if(rem<=0){stopCDUI();return;}
+    const m=Math.floor(rem/60000),s=Math.floor((rem%60000)/1000);
+    document.getElementById('cdval').textContent=m+'m '+s+'s';
+    document.getElementById('cdfill').style.width=((rem/cdTotal)*100)+'%';
+  },1000);
+}
+function stopCDUI(){
+  timerActive=false;
+  if(cdTick){clearInterval(cdTick);cdTick=null;}
+  document.getElementById('cdwrap').classList.remove('show');
+}
+
+// ── TABS ────────────────────────────────────────────────────
+function switchTab(t){
+  ['cd','sch'].forEach(id=>{
+    document.getElementById('tab-'+id).classList.toggle('active',id===t);
+    document.getElementById('body-'+id).classList.toggle('active',id===t);
+  });
+}
+
+// ── LOG ─────────────────────────────────────────────────────
+function log(ico, title, detail, col){
+  const l  = document.getElementById('llist');
+  const ts = new Date().toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  const r  = document.createElement('div');
+  r.className = 'lrow';
+  r.innerHTML = `
+    <div class="ldot" style="background:${col||'#2d4560'}"></div>
+    <div class="ltxt">
+      <span style="color:var(--t1);font-weight:600">${ico} ${title}</span>
+      ${detail ? `<br><span style="font-size:.66rem;color:var(--t3)">${detail}</span>` : ''}
+    </div>
+    <div class="lts">${ts}</div>`;
+  l.insertBefore(r, l.firstChild);
+  while(l.children.length > 60) l.removeChild(l.lastChild);
+}
+function clearLog(){
+  document.getElementById('llist').innerHTML=`<div class="lrow"><div class="ldot" style="background:var(--t3)"></div><div class="ltxt"><span style="color:var(--t2)">🗑️ Log dibersihkan</span></div><div class="lts">—</div></div>`;
+}
+
+// ── MQTT CLIENT ─────────────────────────────────────────────
+let MQ=null;
+function isConn(){return MQ&&MQ.connected;}
+
+function pub(topic,obj){
+  if(!isConn()){
+    toast('⚠️ Belum terhubung ke MQTT!','err');
+    return false;
+  }
+  MQ.publish(topic,JSON.stringify(obj));
+  return true;
+}
+
+// ── AKSI RELAY ──────────────────────────────────────────────
+function handleRelayTap(){
+  if(!isConn()){toast('⚠️ Hubungkan MQTT dulu!','err');return;}
+  pub('smartbox/relay/cmd',{cmd:relayOn?'off':'on'});
+  toast(relayOn?'🔌 Mematikan relay...':'💡 Menyalakan relay...','info');
+}
+
+// ── AKSI TIMER ──────────────────────────────────────────────
+function startCountdown(){
+  if(!isConn()){toast('⚠️ Hubungkan MQTT dulu!','err');return;}
+  const m=parseInt(document.getElementById('cd-min').value);
+  if(!m||m<1||isNaN(m)){toast('⚠️ Isi menit terlebih dahulu!','warn');return;}
+  if(m>1440){toast('⚠️ Maksimal 1440 menit (24 jam)','warn');return;}
+  pub('smartbox/timer/cmd',{mode:'countdown',minutes:m});
+  startCDUI(m);
+  log('⏳','Countdown Dimulai', m+' menit · Relay akan mati otomatis','#ffab00');
+  toast('⏳ Countdown '+m+' menit dimulai','ok');
+}
+
+function startSchedule(){
+  if(!isConn()){toast('⚠️ Hubungkan MQTT dulu!','err');return;}
+  const on=document.getElementById('sch-on').value;
+  const off=document.getElementById('sch-off').value;
+  if(!on||!off){toast('⚠️ Isi waktu nyala & mati!','warn');return;}
+  if(on===off){toast('⚠️ Waktu nyala & mati tidak boleh sama!','warn');return;}
+  pub('smartbox/timer/cmd',{mode:'schedule',on,off});
+  log('📅','Jadwal Harian Disimpan', 'Nyala '+on+' · Mati '+off,'#00d4ff');
+  toast('📅 Jadwal disimpan','ok');
+}
+
+function cancelTimer(){
+  if(!isConn()){toast('⚠️ Belum terhubung MQTT!','err');return;}
+  pub('smartbox/timer/cmd',{mode:'cancel'});
+  stopCDUI();
+  log('✕','Timer Dibatalkan', 'Relay dimatikan manual','#ff4757');
+  toast('✕ Timer dibatalkan','warn');
+}
+
+// ── MODAL ───────────────────────────────────────────────────
+function openModal(){document.getElementById('ov').classList.add('open');}
+function closeModal(){document.getElementById('ov').classList.remove('open');}
+function ovClose(e){if(e.target.id==='ov')closeModal();}
+
+function setConn(cls,txt){
+  document.getElementById('cpill').className='pill '+cls;
+  document.getElementById('ctext').textContent=txt;
+}
+
+// ── MQTT CONNECT ────────────────────────────────────────────
+function connectMQTT(){
+  const host=document.getElementById('m-host').value.trim();
+  const port=parseInt(document.getElementById('m-port').value)||8884;
+  const user=document.getElementById('m-user').value.trim();
+  const pass=document.getElementById('m-pass').value;
+  if(!host){toast('⚠️ Isi Host HiveMQ!','err');return;}
+  if(!user){toast('⚠️ Isi Username!','err');return;}
+  if(MQ){MQ.end(true);}
+  closeModal();
+  setConn('','Menghubungkan...');
+  toast('📡 Menghubungkan ke broker...','info');
+
+  try{
+    MQ=mqtt.connect('wss://'+host+':'+port+'/mqtt',{
+      clientId:'sb-'+Math.random().toString(16).slice(2,8),
+      username:user,password:pass,
+      clean:true,reconnectPeriod:5000,connectTimeout:10000,
+    });
+  } catch(e){
+    setConn('err','Error');
+    toast('❌ Gagal membuat koneksi','err');
+    return;
+  }
+
+  MQ.on('connect',()=>{
+    setConn('on','Online ✓');
+    MQ.subscribe(['smartbox/sensor','smartbox/relay/state','smartbox/alert','smartbox/stats']);
+    log('🟢','MQTT Terhubung', host+':'+port,'#00e676');
+    toast('✅ MQTT terhubung!','ok');
+  });
+
+  MQ.on('error',(e)=>{
+    setConn('err','Error');
+    toast('❌ Koneksi error: '+e.message,'err');
+    log('❌','Koneksi Gagal', e.message,'#ff4757');
+  });
+
+  MQ.on('close',()=>{
+    setConn('','Terputus');
+    updateRelayUI(false,'');
+    log('🔴','MQTT Terputus', 'Mencoba reconnect otomatis...','#ff4757');
+  });
+
+  MQ.on('reconnect',()=>{
+    setConn('','Reconnecting...');
+    toast('🔄 Mencoba reconnect...','info');
+  });
+
+  MQ.on('message',(topic,payload)=>{
+    try{
+      const d=JSON.parse(payload.toString());
+
+      if(topic==='smartbox/sensor'){
+        const t=parseFloat(d.temp),h=parseFloat(d.humidity),g=parseInt(d.gas);
+        if(!isNaN(t)&&!isNaN(h)&&!isNaN(g)){
+          updateSensor(t,h,g);
+          // tidak ada log sensor — hanya event penting yang dicatat
+        }
+      }
+
+      if(topic==='smartbox/relay/state'){
+        const reason = d.reason||'manual';
+        const reasonLabel = {manual:'Manual',countdown:'Countdown selesai','countdown-done':'Countdown selesai','schedule-on':'Jadwal otomatis','schedule-off':'Jadwal otomatis',toggle:'Toggle',boot:'Boot device'}[reason]||reason;
+        updateRelayUI(d.state, d.reason||'');
+        log(
+          d.state?'💡':'🔌',
+          d.state?'Relay ON':'Relay OFF',
+          'Via: '+reasonLabel,
+          d.state?'#00e676':'#6b90b0'
+        );
+        toast(d.state?'💡 Relay ON':'🔌 Relay OFF', d.state?'ok':'info');
+        if(!d.state&&timerActive) stopCDUI();
+      }
+
+      if(topic==='smartbox/alert'){
+        const ico={TEMP_HIGH:'🌡️',HUM_HIGH:'💧',GAS_HIGH:'🌫️'}[d.type]||'⚠️';
+        showAlert(ico, d.message, 'Nilai: '+d.value+(d.timestamp?' — '+d.timestamp:''));
+        log(ico, '⚠️ '+d.message, 'Nilai terdeteksi: '+d.value, '#ff4757');
+        toast(ico+' '+d.message,'err');
+      }
+
+      if(topic==='smartbox/stats'){
+        if(d.wifi_rssi) setConn('on','Online '+d.wifi_rssi+'dBm');
+      }
+
+    }catch(e){
+      log('⚠️','Parse Error', e.message,'#ff4757');
+    }
+  });
+}
+</script>
+</body>
+</html>
